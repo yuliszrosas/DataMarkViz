@@ -1,22 +1,18 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import PriceChart from './components/PriceChart';
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      
-
-      <div className="ticks"></div>
-      <div className="bg-blue-500 text-white p-4">
-  <h1 className="text-2xl font-bold">Tailwind funciona!</h1>
-</div>
-    </>
-  )
+    <div className="min-h-screen bg-gray-100 p-8">
+      <div className="max-w-6xl mx-auto">
+        <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
+          DataMarkViz - Dashboard del Mercado Mexicano
+        </h1>
+        <div className="bg-white p-6 rounded-lg shadow-lg">
+          <PriceChart />
+        </div>
+      </div>
+    </div>
+  );
 }
 
-export default App
+export default App;
