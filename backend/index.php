@@ -37,4 +37,18 @@ $app->get('/', function (Request $request, Response $response, $args) {
     return $response;
 });
 
+// Ruta de prueba para verificar conexión a SQLite
+$app->get('/api/test-db', function (Request $request, Response $response, $args) {
+    $pdo = require __DIR__ . '/config/database.php';
+    
+    $stmt = $pdo->query("SELECT name FROM sqlite_master WHERE type='table'");
+    $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    
+    $response->getBody()->write(json_encode([
+        'status' => 'ok',
+        'tables' => $tables
+    ]));
+    return $response->withHeader('Content-Type', 'application/json');
+});
+
 $app->run();
