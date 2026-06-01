@@ -255,4 +255,129 @@ $app->get('/api/tipo-cambio', function (Request $request, Response $response, $a
     return $response->withHeader('Content-Type', 'application/json');
 });
 
+// Endpoint para calcular rendimientos (reutiliza caché de precios y tipo de cambio)
+$app->get('/api/rendimientos', function (Request $request, Response $response, $args) {
+    $pdo = require __DIR__ . '/config/database.php';
+    
+    // Obtener parámetros
+    $params = $request->getQueryParams();
+    $symbol = $params['symbol'] ?? 'AAPL';
+    $range = $params['range'] ?? '1m';
+    
+    // 1. Obtener precios de la caché o de Twelve Data
+    $stmt = $pdo->prepare("SELECT datos_json FROM cache_precio 
+                           WHERE simbolo = :symbol AND rango = :range 
+                           AND julianday('now') - julianday(fecha_consulta) < 1");
+    $stmt->execute([':symbol' => $symbol, ':range' => $range]);
+    $cachedPrecios = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$cachedPrecios) {
+        // Si no está en caché, consultar a Twelve Data
+        $apiKey = 'a52c3d02be2740e4881d9aaa290844d1';
+        $rangeMap = ['1m' => 30, '3m' => 90, '6m' => 180, '1y' => 365];
+        $outputsize = $rangeMap[$range] ?? 30;
+        $url = "https://api.twelvedata.com/time_series?symbol=$symbol&interval=1day&outputsize=$outputsize&apikey=$apiKey";
+        
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        $jsonRespuesta = curl_exec($ch);
+        curl_close($ch);
+        
+        $datosPrecios = json_decode($jsonRespuesta, true);
+        if (isset($datosPrecios['status']) && $datosPrecios['status'] === 'error') {
+            $response->getBody()->write(json_encode(['status' => 'error', 'message' => $datosPrecios['message'] ?? 'Error en Twelve Data']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+        }
+        $precios = $datosPrecios['values'];
+    } else {
+        $precios = json_decode($cachedPrecios['datos_json'], true);
+    }
+    
+    // 2. Obtener tipo de cambio de la caché
+    $stmt = $pdo->prepare("SELECT datos_json FROM cache_cambio 
+                           WHERE rango = :range 
+                           AND julianday('now') - julianday(fecha_consulta) < 0.25");
+    $stmt->execute([':range' => $range]);
+    $cachedCambio = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$cachedCambio) {
+        $response->getBody()->write(json_encode(['status' => 'error', 'message' => 'No hay datos de tipo de cambio para este rango']));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+    }
+    
+    $tiposCambio = json_decode($cachedCambio['datos_json'], true);
+    
+    // Crear mapa fecha -> tipo_cambio
+    $tipoCambioMap = [];
+    foreach ($tiposCambio as $item) {
+        $tipoCambioMap[$item['fecha']] = $item['tipo_cambio'];
+    }
+    
+    // 3. Procesar datos: calcular precios en MXN
+    $resultados = [];
+    $preciosUSD = [];
+    $preciosMXN = [];
+    $fechas = [];
+    
+    foreach ($precios as $precio) {
+        $fecha = $precio['datetime'];
+        $closeUSD = floatval($precio['close']);
+        $tipoCambio = $tipoCambioMap[$fecha] ?? end($tiposCambio)['tipo_cambio'];
+        $closeMXN = $closeUSD * $tipoCambio;
+        
+        $preciosUSD[] = $closeUSD;
+        $preciosMXN[] = $closeMXN;
+        $fechas[] = $fecha;
+    }
+    
+    // 4. Calcular rendimientos diarios
+    $rendimientoDiarioUSD = [0];
+    $rendimientoDiarioMXN = [0];
+    for ($i = 1; $i < count($preciosUSD); $i++) {
+        $rendimientoDiarioUSD[] = (($preciosUSD[$i] - $preciosUSD[$i-1]) / $preciosUSD[$i-1]) * 100;
+        $rendimientoDiarioMXN[] = (($preciosMXN[$i] - $preciosMXN[$i-1]) / $preciosMXN[$i-1]) * 100;
+    }
+    
+    // 5. Calcular rendimientos acumulados
+    $precioInicialUSD = $preciosUSD[0];
+    $precioInicialMXN = $preciosMXN[0];
+    $rendimientoAcumuladoUSD = [];
+    $rendimientoAcumuladoMXN = [];
+    foreach ($preciosUSD as $i => $precio) {
+        $rendimientoAcumuladoUSD[] = (($precio - $precioInicialUSD) / $precioInicialUSD) * 100;
+        $rendimientoAcumuladoMXN[] = (($preciosMXN[$i] - $precioInicialMXN) / $precioInicialMXN) * 100;
+    }
+    
+    // 6. Calcular impacto cambiario (diferencia MXN - USD)
+    $impactoCambiario = [];
+    for ($i = 0; $i < count($rendimientoAcumuladoUSD); $i++) {
+        $impactoCambiario[] = $rendimientoAcumuladoMXN[$i] - $rendimientoAcumuladoUSD[$i];
+    }
+    
+    // 7. Construir respuesta
+    $respuestaData = [];
+    for ($i = 0; $i < count($fechas); $i++) {
+        $respuestaData[] = [
+            'fecha' => $fechas[$i],
+            'precio_usd' => round($preciosUSD[$i], 2),
+            'precio_mxn' => round($preciosMXN[$i], 2),
+            'rendimiento_diario_usd' => round($rendimientoDiarioUSD[$i], 2),
+            'rendimiento_diario_mxn' => round($rendimientoDiarioMXN[$i], 2),
+            'rendimiento_acumulado_usd' => round($rendimientoAcumuladoUSD[$i], 2),
+            'rendimiento_acumulado_mxn' => round($rendimientoAcumuladoMXN[$i], 2),
+            'impacto_cambiario' => round($impactoCambiario[$i], 2)
+        ];
+    }
+    
+    $response->getBody()->write(json_encode([
+        'status' => 'ok',
+        'symbol' => $symbol,
+        'range' => $range,
+        'data' => $respuestaData
+    ]));
+    return $response->withHeader('Content-Type', 'application/json');
+});
+
 $app->run();
