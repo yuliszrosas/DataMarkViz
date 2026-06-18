@@ -120,7 +120,19 @@ function App() {
                 {loading && (
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         
-                        {/* Columna izquierda — skeleton de la gráfica */}
+                        {/* Columna izquierda — skeleton de la gráfica precios*/}
+                        <div className="lg:col-span-2">
+                            <div className="bg-white rounded-lg shadow-sm p-4">
+                                <div className="animate-pulse flex flex-col gap-3">
+                                    <div className="h-5 bg-gray-200 rounded w-48 mx-auto" />
+                                    <div className="h-4 bg-gray-200 rounded w-64 mx-auto" />
+                                    <div className="bg-gray-200 rounded w-full" style={{ height: '360px' }} />
+                                </div>
+                            </div>
+                        </div>
+                    
+                        
+                        {/* Columna izquierda — skeleton de la gráfica rendimientos*/}
                         <div className="lg:col-span-2">
                             <div className="bg-white rounded-lg shadow-sm p-4">
                                 <div className="animate-pulse flex flex-col gap-3">
@@ -141,6 +153,9 @@ function App() {
                         <div className="lg:col-span-2 flex flex-col gap-6">
                             <div className="bg-white rounded-lg shadow-sm p-4">
                                 <PriceChart data={data} symbol={symbol} />
+                            </div>
+                            <div className="bg-white rounded-lg shadow-sm p-4">
+                                <PerformanceChart data={data} symbol={symbol}/>
                             </div>
                         </div>
 
