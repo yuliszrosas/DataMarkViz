@@ -72,71 +72,64 @@ $app->get('/api/precios', function (Request $request, Response $response, $args)
     
     // 1. Verificar caché
     $stmt = $pdo->prepare("SELECT datos_json, fecha_consulta FROM cache_precio 
-                           WHERE simbolo = :symbol AND rango = :range 
+                           WHERE simbolo = :symbol  
                            AND julianday('now') - julianday(fecha_consulta) < 1");
-    $stmt->execute([':symbol' => $symbol, ':range' => $range]);
+    $stmt->execute([':symbol' => $symbol]);
     $cached = $stmt->fetch(PDO::FETCH_ASSOC);
     
     if ($cached) {
-        // Datos del caché
         $precios = json_decode($cached['datos_json'], true);
+    } else {
+        // 2. Consultar a TD
+        $apiKey = 'a52c3d02be2740e4881d9aaa290844d1';
+        $url = "https://api.twelvedata.com/time_series?symbol=$symbol&interval=1day&outputsize=$outputsize&apikey=$apiKey";
+    
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        $jsonRespuesta = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+    
+        if ($httpCode !== 200) {
+            $response->getBody()->write(json_encode([
+                'status' => 'error',
+                'message' => 'Error al consultar Twelve Data. Código: ' . $httpCode
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
+        }
+    
+        $datos = json_decode($jsonRespuesta, true);
+    
+        if (isset($datos['status']) && $datos['status'] === 'error') {
+            $response->getBody()->write(json_encode([
+                'status' => 'error',
+                'message' => $datos['message'] ?? 'Símbolo inválido o error de API'
+            ]));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+        }
+        
+        $precios = $datos['values'];
+
+        // 3. Guardar en caché
+        $stmt = $pdo->prepare("INSERT INTO cache_precio (simbolo, rango, datos_json, fecha_consulta) 
+                            VALUES (:symbol, '1y', :json, datetime('now'))");
+        $stmt->execute([
+            ':symbol' => $symbol,
+            ':json' => json_encode($precios)]);
+
+        $preciosRecortados = array_slice($precios, 0, $diasNecesarios);
+    
         $response->getBody()->write(json_encode([
             'status' => 'ok',
-            'source' => 'cache',
+            'source' => $cached ? 'cache' : 'api',
             'symbol' => $symbol,
             'range' => $range,
-            'data' => $precios
+            'data' => $datos['values']
         ]));
         return $response->withHeader('Content-Type', 'application/json');
     }
-    
-    // 2. Consultar a TD
-    $apiKey = 'a52c3d02be2740e4881d9aaa290844d1';
-    $url = "https://api.twelvedata.com/time_series?symbol=$symbol&interval=1day&outputsize=$outputsize&apikey=$apiKey";
-    
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    $jsonRespuesta = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    
-    if ($httpCode !== 200) {
-        $response->getBody()->write(json_encode([
-            'status' => 'error',
-            'message' => 'Error al consultar Twelve Data. Código: ' . $httpCode
-        ]));
-        return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
-    }
-    
-    $datos = json_decode($jsonRespuesta, true);
-    
-    if (isset($datos['status']) && $datos['status'] === 'error') {
-        $response->getBody()->write(json_encode([
-            'status' => 'error',
-            'message' => $datos['message'] ?? 'Símbolo inválido o error de API'
-        ]));
-        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
-    }
-    
-    // 3. Guardar en caché
-    $stmt = $pdo->prepare("INSERT INTO cache_precio (simbolo, rango, datos_json, fecha_consulta) 
-                           VALUES (:symbol, :range, :json, datetime('now'))");
-    $stmt->execute([
-        ':symbol' => $symbol,
-        ':range' => $range,
-        ':json' => json_encode($datos['values'])
-    ]);
-    
-    $response->getBody()->write(json_encode([
-        'status' => 'ok',
-        'source' => 'api',
-        'symbol' => $symbol,
-        'range' => $range,
-        'data' => $datos['values']
-    ]));
-    return $response->withHeader('Content-Type', 'application/json');
 });
 
 // Endpoint para obtener tipo de cambio USD/MXN (con caché y forward fill)
@@ -258,25 +251,24 @@ $app->get('/api/tipo-cambio', function (Request $request, Response $response, $a
 // Endpoint para calcular rendimientos (reutiliza caché de precios y tipo de cambio)
 $app->get('/api/rendimientos', function (Request $request, Response $response, $args) {
     $pdo = require __DIR__ . '/config/database.php';
-    
-    // Obtener parámetros
+
     $params = $request->getQueryParams();
     $symbol = $params['symbol'] ?? 'AAPL';
     $range = $params['range'] ?? '1m';
     
-    // 1. Obtener precios de la caché o de Twelve Data
+     // 1. Obtener precios de la caché o de Twelve Data
+    $rangeMap = ['1m' => 30, '3m' => 90, '6m' => 180, '1y' => 365];
+    $diasNecesarios = $rangeMap[$range] ?? 30;
+
     $stmt = $pdo->prepare("SELECT datos_json FROM cache_precio 
-                           WHERE simbolo = :symbol AND rango = :range 
+                           WHERE simbolo = :symbol 
                            AND julianday('now') - julianday(fecha_consulta) < 1");
-    $stmt->execute([':symbol' => $symbol, ':range' => $range]);
+    $stmt->execute([':symbol' => $symbol]);
     $cachedPrecios = $stmt->fetch(PDO::FETCH_ASSOC);
     
     if (!$cachedPrecios) {
-        // Si no está en caché, consultar a Twelve Data
         $apiKey = 'a52c3d02be2740e4881d9aaa290844d1';
-        $rangeMap = ['1m' => 30, '3m' => 90, '6m' => 180, '1y' => 365];
-        $outputsize = $rangeMap[$range] ?? 30;
-        $url = "https://api.twelvedata.com/time_series?symbol=$symbol&interval=1day&outputsize=$outputsize&apikey=$apiKey";
+        $url = "https://api.twelvedata.com/time_series?symbol=$symbol&interval=1day&outputsize=365&apikey=$apiKey";
         
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
@@ -291,9 +283,16 @@ $app->get('/api/rendimientos', function (Request $request, Response $response, $
             return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
         }
         $precios = $datosPrecios['values'];
+
+        $stmt = $pdo->prepare("INSERT INTO cache_precio (simbolo, rango, datos_json, fecha_consulta) 
+                               VALUES (:symbol, '1y', :json, datetime('now'))");
+        $stmt->execute([':symbol' => $symbol, ':json' => json_encode($precios)]);
+        
     } else {
         $precios = json_decode($cachedPrecios['datos_json'], true);
     }
+
+    $precios = array_slice($precios, 0, $diasNecesarios);
     
     // 2. Obtener tipo de cambio de la caché
     $stmt = $pdo->prepare("SELECT datos_json FROM cache_cambio 
@@ -303,11 +302,64 @@ $app->get('/api/rendimientos', function (Request $request, Response $response, $
     $cachedCambio = $stmt->fetch(PDO::FETCH_ASSOC);
     
     if (!$cachedCambio) {
-        $response->getBody()->write(json_encode(['status' => 'error', 'message' => 'No hay datos de tipo de cambio para este rango']));
-        return $response->withHeader('Content-Type', 'application/json')->withStatus(500);
-    }
-    
-    $tiposCambio = json_decode($cachedCambio['datos_json'], true);
+        $tz = new DateTimeZone('America/Mexico_City');
+        $ahora = new DateTime('now', $tz);
+        $hoy = $ahora->format('Y-m-d');
+        $rangeMap = [
+            '1m' => (clone $ahora)->modify('-1 month')->format('Y-m-d'),
+            '3m' => (clone $ahora)->modify('-3 months')->format('Y-m-d'),                
+            '6m' => (clone $ahora)->modify('-6 months')->format('Y-m-d'),
+            '1y' => (clone $ahora)->modify('-1 year')->format('Y-m-d'),
+        ];
+        
+        $fechaInicio = $rangeMap[$range] ?? $rangeMap['1m'];            
+        $fechaFin = $hoy;
+
+        $token = '959e70f0e3c12594de35e4412b8ab174d823efb01b0fff2a4ecbbbf02d51d599';
+        $url = "https://www.banxico.org.mx/SieAPIRest/service/v1/series/SF43718/datos/$fechaInicio/$fechaFin?mediaType=json&token=$token";
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        $jsonRespuesta = curl_exec($ch);
+        curl_close($ch);
+
+        $datos = json_decode($jsonRespuesta, true);
+        $datosRaw = $datos['bmx']['series'][0]['datos'] ?? [];
+
+        $valoresPorFecha = [];
+        foreach ($datosRaw as $item) {
+            $partes = explode('/', $item['fecha']);
+                $fechaIso = $partes[2] . '-' . $partes[1] . '-' . $partes[0];
+                if ($fechaIso > $hoy) continue;
+                $valor = floatval($item['dato']);
+                if ($valor > 0) $valoresPorFecha[$fechaIso] = $valor;
+        }
+
+        ksort($valoresPorFecha);
+        $ultimoValor = !empty($valoresPorFecha) ? end($valoresPorFecha) : null;
+
+        $fechasProcesadas = [];
+        $fechaActual = new DateTime($fechaInicio, $tz);
+        $fechaFinObj = new DateTime($fechaFin, $tz);
+        while ($fechaActual <= $fechaFinObj) {                
+            $fechaIso = $fechaActual->format('Y-m-d');
+            if (isset($valoresPorFecha[$fechaIso])) $ultimoValor = $valoresPorFecha[$fechaIso];
+            if ($ultimoValor !== null) {
+                $fechasProcesadas[] = ['fecha' => $fechaIso, 'tipo_cambio' => $ultimoValor];
+            }
+            $fechaActual->modify('+1 day');
+        }
+
+        $stmt = $pdo->prepare("INSERT INTO cache_cambio (rango, datos_json, fecha_consulta) 
+                                VALUES (:range, :json, datetime('now'))");
+        $stmt->execute([':range' => $range, ':json' => json_encode($fechasProcesadas)]);
+
+        $tiposCambio = $fechasProcesadas;
+    } 
+    else { $tiposCambio = json_decode($cachedCambio['datos_json'], true); }
+
     
     // Crear mapa fecha -> tipo_cambio
     $tipoCambioMap = [];
