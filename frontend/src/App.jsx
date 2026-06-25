@@ -169,6 +169,12 @@ function App() {
                         {/* Columna derecha — tarjeta + tabla*/}
                         <div className="flex flex-col gap-6">
                             <ImpactCard data={data} symbol={symbol}/>
+                            <div className="bg-white rounded-lg shadow-sm p-4">
+                                <h2 className="text-sm font-semibold text-gray-500 mb-4 uppercase tracking-wide">
+                                    Tabla resumen
+                                </h2>
+                                <SummaryTable data={data} symbol={symbol}/>
+                            </div>
                         </div>
 
                     </div>
