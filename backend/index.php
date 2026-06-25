@@ -68,7 +68,7 @@ $app->get('/api/precios', function (Request $request, Response $response, $args)
         '6m' => 180,
         '1y' => 365
     ];
-    $outputsize = $rangeMap[$range] ?? 30;
+    $diasNecesarios = $rangeMap[$range] ?? 30;
     
     // 1. Verificar caché
     $stmt = $pdo->prepare("SELECT datos_json, fecha_consulta FROM cache_precio 
@@ -82,7 +82,7 @@ $app->get('/api/precios', function (Request $request, Response $response, $args)
     } else {
         // 2. Consultar a TD
         $apiKey = 'a52c3d02be2740e4881d9aaa290844d1';
-        $url = "https://api.twelvedata.com/time_series?symbol=$symbol&interval=1day&outputsize=$outputsize&apikey=$apiKey";
+        $url = "https://api.twelvedata.com/time_series?symbol=$symbol&interval=1day&outputsize=365&apikey=$apiKey";
     
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
@@ -118,18 +118,19 @@ $app->get('/api/precios', function (Request $request, Response $response, $args)
         $stmt->execute([
             ':symbol' => $symbol,
             ':json' => json_encode($precios)]);
-
-        $preciosRecortados = array_slice($precios, 0, $diasNecesarios);
-    
-        $response->getBody()->write(json_encode([
-            'status' => 'ok',
-            'source' => $cached ? 'cache' : 'api',
-            'symbol' => $symbol,
-            'range' => $range,
-            'data' => $datos['values']
-        ]));
-        return $response->withHeader('Content-Type', 'application/json');
     }
+    
+    $preciosRecortados = array_slice($precios, 0, $diasNecesarios);
+    
+    $response->getBody()->write(json_encode([
+        'status' => 'ok',
+        'source' => $cached ? 'cache' : 'api',
+        'symbol' => $symbol,
+        'range' => $range,
+        'data' => $preciosRecortados
+    ]));
+    return $response->withHeader('Content-Type', 'application/json');
+    
 });
 
 // Endpoint para obtener tipo de cambio USD/MXN (con caché y forward fill)
@@ -146,10 +147,10 @@ $app->get('/api/tipo-cambio', function (Request $request, Response $response, $a
     $fechaFin = $hoy;
     
     $rangeMap = [
-        '1m' => (clone $ahora)->modify('-1 month')->format('Y-m-d'),
-        '3m' => (clone $ahora)->modify('-3 months')->format('Y-m-d'),
-        '6m' => (clone $ahora)->modify('-6 months')->format('Y-m-d'),
-        '1y' => (clone $ahora)->modify('-1 year')->format('Y-m-d'),
+        '1m' => (clone $ahora)->modify('-45 days')->format('Y-m-d'),
+        '3m' => (clone $ahora)->modify('-120 days')->format('Y-m-d'),
+        '6m' => (clone $ahora)->modify('-210 days')->format('Y-m-d'),
+        '1y' => (clone $ahora)->modify('-400 days')->format('Y-m-d'),
     ];
     $fechaInicio = $rangeMap[$range] ?? $rangeMap['1m'];
     
@@ -293,6 +294,7 @@ $app->get('/api/rendimientos', function (Request $request, Response $response, $
     }
 
     $precios = array_slice($precios, 0, $diasNecesarios);
+    $fechaMasAntigua = $precios[count($precios) - 1]['datetime'];
     
     // 2. Obtener tipo de cambio de la caché
     $stmt = $pdo->prepare("SELECT datos_json FROM cache_cambio 
@@ -306,13 +308,14 @@ $app->get('/api/rendimientos', function (Request $request, Response $response, $
         $ahora = new DateTime('now', $tz);
         $hoy = $ahora->format('Y-m-d');
         $rangeMap = [
-            '1m' => (clone $ahora)->modify('-1 month')->format('Y-m-d'),
-            '3m' => (clone $ahora)->modify('-3 months')->format('Y-m-d'),                
-            '6m' => (clone $ahora)->modify('-6 months')->format('Y-m-d'),
-            '1y' => (clone $ahora)->modify('-1 year')->format('Y-m-d'),
+            '1m' => (clone $ahora)->modify('-45 days')->format('Y-m-d'), 
+            '3m' => (clone $ahora)->modify('-120 days')->format('Y-m-d'), 
+            '6m' => (clone $ahora)->modify('-210 days')->format('Y-m-d'),
+            '1y' => (clone $ahora)->modify('-400 days')->format('Y-m-d')
         ];
         
-        $fechaInicio = $rangeMap[$range] ?? $rangeMap['1m'];            
+        //$fechaInicio = $rangeMap[$range] ?? $rangeMap['1m'];            
+        $fechaInicio = $fechaMasAntigua;
         $fechaFin = $hoy;
 
         $token = '959e70f0e3c12594de35e4412b8ab174d823efb01b0fff2a4ecbbbf02d51d599';
@@ -393,8 +396,8 @@ $app->get('/api/rendimientos', function (Request $request, Response $response, $
     }
     
     // 5. Calcular rendimientos acumulados
-    $precioInicialUSD = $preciosUSD[0];
-    $precioInicialMXN = $preciosMXN[0];
+    $precioInicialUSD = $preciosUSD[count($preciosUSD) - 1];
+    $precioInicialMXN = $preciosMXN[count($preciosMXN) - 1];
     $rendimientoAcumuladoUSD = [];
     $rendimientoAcumuladoMXN = [];
     foreach ($preciosUSD as $i => $precio) {

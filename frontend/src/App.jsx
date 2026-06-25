@@ -25,7 +25,12 @@ function App() {
         setLoading(true);
         setError(null);
         try {
-            const result = await fetchRendimientos(symbol, range);
+            console.log(` Solicitando: ${symbol} - ${range}`);
+        const result = await fetchRendimientos(symbol, range);
+        console.log(' Resultado completo:', result);
+        console.log(' data:', result.data);
+        console.log(' longitud:', result.data?.length);
+            //const result = await fetchRendimientos(symbol, range);
             if (result.status === 'ok') {
                 setData(result.data);
                 setLastUpdate(new Date().toLocaleString());
@@ -33,6 +38,7 @@ function App() {
                 setError('Error al cargar los datos');
             }
         } catch (err) {
+            
             setError('Error de conexión con el servidor');
             console.error(err);
         } finally {
@@ -41,6 +47,7 @@ function App() {
     };
 
     useEffect(() => {
+        setData(null);
         loadData();
     }, [symbol, range]);
 
@@ -146,7 +153,7 @@ function App() {
                 )}
 
                 
-                {!loading && !error && data && (
+                {!loading && !error && data && data.length > 0 && (
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
                         {/* Columna izquierda — gráficas */}
@@ -161,7 +168,7 @@ function App() {
 
                         {/* Columna derecha — tarjeta + tabla*/}
                         <div className="flex flex-col gap-6">
-                            
+                            <ImpactCard data={data} symbol={symbol}/>
                         </div>
 
                     </div>
