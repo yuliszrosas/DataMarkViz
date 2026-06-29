@@ -1,6 +1,9 @@
 <?php
 require __DIR__ . '/vendor/autoload.php';
 
+$dotenv = \Dotenv\Dotenv::createImmutable(__DIR__);
+$dotenv->load();
+
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Factory\AppFactory;
@@ -81,7 +84,7 @@ $app->get('/api/precios', function (Request $request, Response $response, $args)
         $precios = json_decode($cached['datos_json'], true);
     } else {
         // 2. Consultar a TD
-        $apiKey = 'a52c3d02be2740e4881d9aaa290844d1';
+        $apiKey = $_ENV['TWELVE_DATA_API_KEY'];
         $url = "https://api.twelvedata.com/time_series?symbol=$symbol&interval=1day&outputsize=365&apikey=$apiKey";
     
         $ch = curl_init();
@@ -170,7 +173,7 @@ $app->get('/api/tipo-cambio', function (Request $request, Response $response, $a
     }
     
     // Consultar Banxico
-    $token = '959e70f0e3c12594de35e4412b8ab174d823efb01b0fff2a4ecbbbf02d51d599';
+    $token = $_ENV['BANXICO_TOKEN'];
     $url = "https://www.banxico.org.mx/SieAPIRest/service/v1/series/SF43718/datos/$fechaInicio/$fechaFin?mediaType=json&token=$token";
     
     $ch = curl_init();
@@ -268,7 +271,7 @@ $app->get('/api/rendimientos', function (Request $request, Response $response, $
     $cachedPrecios = $stmt->fetch(PDO::FETCH_ASSOC);
     
     if (!$cachedPrecios) {
-        $apiKey = 'a52c3d02be2740e4881d9aaa290844d1';
+        $apiKey = $_ENV['TWELVE_DATA_API_KEY'];
         $url = "https://api.twelvedata.com/time_series?symbol=$symbol&interval=1day&outputsize=365&apikey=$apiKey";
         
         $ch = curl_init();
@@ -318,7 +321,7 @@ $app->get('/api/rendimientos', function (Request $request, Response $response, $
         $fechaInicio = $fechaMasAntigua;
         $fechaFin = $hoy;
 
-        $token = '959e70f0e3c12594de35e4412b8ab174d823efb01b0fff2a4ecbbbf02d51d599';
+        $token = $_ENV['BANXICO_TOKEN'];
         $url = "https://www.banxico.org.mx/SieAPIRest/service/v1/series/SF43718/datos/$fechaInicio/$fechaFin?mediaType=json&token=$token";
 
         $ch = curl_init();
