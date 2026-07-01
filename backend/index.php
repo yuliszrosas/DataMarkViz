@@ -7,6 +7,8 @@ $dotenv->load();
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Factory\AppFactory;
+use Firebase\JWT\JWT;
+use Firebase\JWT\Key;
 
 $app = AppFactory::create();
 
@@ -435,6 +437,82 @@ $app->get('/api/rendimientos', function (Request $request, Response $response, $
         'range' => $range,
         'data' => $respuestaData
     ]));
+    return $response->withHeader('Content-Type', 'application/json');
+});
+
+// Usuarios
+$JWT_SECRET = $_ENV['JWT_SECRET'];
+
+//Endpoint para el registro de usuarios 
+$app->post('/api/auth/register', function (Request $request, Response $response) use ($JWT_SECRET) {
+    $pdo = require __DIR__ . '/config/database.php';
+    $body = json_decode($request->getBody()->getContents(), true);
+
+    $nombre = trim($body['nombre'] ?? '');
+    $correo = trim($body['correo'] ?? '');
+    $password = $body['contrasena'] ?? '';
+
+    //Validaciones
+    if(!$nombre || !$correo || !$password){
+        $response->getBody()->write(json_encode(['status' => 'error', 'message' => 'Todos los campos son requeridos']));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+    }
+    if(!filter_var($correo, FILTER_VALIDATE_EMAIL)){
+        $response->getBody()->write(json_encode(['status' => 'error', 'message' => 'Correo inválido']));
+        return $response->withHeader('Content-type', 'application/json')->withStatus(400);
+    }
+    if(strlen($password) < 8){
+        $response->getBody()->write(json_encode(['status' => 'error', 'message' => 'La contraseña debe tener al menos 8 caracteres']));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(409);
+    }
+
+    $stmt = $pdo->prepare("SELECT id_usuario FROM usuarios WHERE correo = :correo");
+    $stmt->execute([':correo' => $correo]);
+
+    if($stmt->fetch()){
+        $response->getBody()->write(json_encode(['status' => 'error', 'message' => 'El correo ya está regstrado']));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(409);
+    }
+    //Guardar usuario
+    $hash = password_hash($password, PASSWORD_BCRYPT);
+    $stmt = $pdo->prepare("INSERT INTO usuarios (nombre, correo, contrasena) VALUES (:nombre, :correo, :hash)");
+    $stmt->execute([':nombre' => $nombre, ':correo' => $correo, ':hash' => $hash]);
+    $id = $pdo->lastInsertId();
+
+    //Generar JWT
+    $payload = ['sub' => $id, 'nombre' => $nombre, 'correo' => $correo, 'iat' => time(), 'exp' => time() + 85400];
+    $token = JWT::encode($payload, $JWT_SECRET, 'HS256');
+
+    $response->getBody()->write(json_encode(['status' => 'ok', 'token' => $token, 'nombre' => $nombre]));
+    return $response->withHeader('Content-Type', 'application/json')->withStatus(201);
+});
+
+//Endpoint para el logeo de usuarios
+$app->post('/api/auth/login', function (Request $request, Response $response) use ($JWT_SECRET) {
+    $pdo = require __DIR__ . '/config/database.php';
+    $body = json_decode($request->getBody()->getContents(), true);
+
+    $correo = trim($body['correo'] ?? '');
+    $password = $body['contrasena'] ?? '';
+
+    if(!$correo || !$password){
+        $response->getBody()->write(json_encode(['status' => 'error', 'message' => 'Correo y contraseña requeridos']));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+    }
+
+    $stmt = $pdo->prepare("SELECT * FROM usuarios WHERE correo = :correo");
+    $stmt->execute([':correo' => $correo]);
+    $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if(!$usuario || !password_verify($password, $usuario['contrasena'])) {
+        $response->getBody()->write(json_encode(['status' => 'error', 'message' => 'Credenciales incorrectas']));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
+    }
+
+    $payload = ['sub' => $usuario['id_usuario'], 'nombre' => $usuario['nombre'], 'correo' => $correo, 'iat' => time(), 'exp' => time() + 86400];
+    $token = JWT::encode($payload, $JWT_SECRET, 'HS256');
+
+    $response->getBody()->write(json_encode(['status' => 'ok', 'token' => $token, 'nombre' => $usuario['nombre']]));
     return $response->withHeader('Content-Type', 'application/json');
 });
 
