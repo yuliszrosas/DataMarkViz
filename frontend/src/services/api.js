@@ -51,3 +51,39 @@ export const fetchTipoCambio = async (range) => {
     }
 };
 
+//Registro de usuario
+export const registerUsuario = async (nombre, correo, contrasena) => {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json' },
+            body: JSON.stringify({nombre, correo, contrasena})
+        });
+
+        const data = await response.json();
+        if(!response.ok) throw new Error(data.message || 'Error al registrarse');
+        return data;
+
+    }catch(error){
+        console.error('Error: ', error);
+        throw error;
+    }
+};
+
+//Login de usuario
+export const loginUsuario = async (correo, contrasena) => {
+    try{
+        const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({correo, contrasena})
+        });
+
+        const data = await response.json();
+        if(!response.ok) throw new Error(data.message || 'Error al iniciar sesión');
+        return data;
+    }catch(error){
+        console.error('Error: ', error);
+        throw error;
+    }
+};
