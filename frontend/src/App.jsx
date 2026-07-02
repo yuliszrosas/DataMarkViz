@@ -7,6 +7,7 @@ import ImpactCard from './components/ImpactCard';
 import Login from './components/Login';
 import Register from './components/Register';
 import { useAuth } from './context/AuthContext';
+import { fetchFavoritos, agregarFavorito, eliminarFavorito } from './services/api';
 
 const availableSymbols = ['AAPL', 'TSLA', 'MSFT', 'GOOGL', 'AMZN'];
 const availableRanges = [
@@ -17,7 +18,7 @@ const availableRanges = [
 ];
 
 function App() {
-    const {usuario, logout} = useAuth();
+    const {usuario, logout, token} = useAuth();
     const [showAuthModal, setShowAuthModal] = useState(false);
     const [showRegister, setShowRegister] = useState(false);
     const [symbol, setSymbol] = useState('AAPL');
@@ -26,6 +27,8 @@ function App() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [lastUpdate, setLastUpdate] = useState(null);
+    const [favoritos, setFavoritos] = useState([]);
+    const [showFavoritos, setShowFavoritos] = useState(false);
 
     const loadData = async () => {
         setLoading(true);
@@ -56,13 +59,32 @@ function App() {
         loadData();
     }, [symbol, range]);
 
-    const handleFavoritoClick = () => {
+    useEffect(() => {
+        if (usuario && token) {
+            fetchFavoritos(token).then(data => setFavoritos(data.data));
+        } else {
+            setFavoritos([]);
+        }
+    }, [usuario]);
+
+    const handleFavoritoClick = async () => {
         if(!usuario){
             setShowRegister(false);
             setShowAuthModal(true);
             return;
         }
-        //Logica de agregar favoritos (RF14)
+        try {
+            const esFavorito = favoritos.includes(symbol);
+            if (esFavorito) {
+                await eliminarFavorito(symbol, token);
+                setFavoritos(favoritos.filter(f => f !== symbol));
+            } else {
+                await agregarFavorito(symbol, token);
+                setFavoritos([...favoritos, symbol]);
+            }
+        } catch (err) {
+            console.error(err);
+        }
     }
 
     const handleUserIconClick = () => {
@@ -70,6 +92,7 @@ function App() {
         setShowRegister(false);
         setShowAuthModal(true);
     }
+
 
     return (
         <div className="min-h-screen bg-gray-100">
@@ -84,6 +107,14 @@ function App() {
                     {usuario ? (
                         <div className="flex items-center gap-3">
                             <span className="text-sm text-gray-600">Hola, <strong>{usuario}</strong></span>
+                            <button onClick={() => setShowFavoritos(!showFavoritos)}
+                                className="w-9 h-9 rounded-full border border-gray-300 flex items-center justify-center text-yellow-500 hover:bg-yellow-50 transition"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+                                </svg>
+                            </button>
+
                             <button
                                 onClick={logout}
                                 className="text-sm text-gray-500 border border-gray-300 rounded-md px-3 py-1.5 hover:bg-gray-50 transition"
@@ -147,12 +178,21 @@ function App() {
                         </select>
                     </div>
 
-                    {/* Botón agregar favorito — funcional en Sprint 3 */}
-                    <button onClick={handleFavoritoClick} className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-md text-gray-500 hover:bg-gray-50 transition">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    {/* Botón agregar favorito*/}
+                    <button
+                        onClick={handleFavoritoClick}
+                        className={`flex items-center gap-2 px-3 py-2 text-sm border rounded-md transition ${
+                            favoritos.includes(symbol)
+                                ? 'bg-yellow-50 border-yellow-400 text-yellow-600'
+                                : 'border-gray-300 text-gray-500 hover:bg-gray-50'
+                        }`}
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4"
+                            fill={favoritos.includes(symbol) ? 'currentColor' : 'none'}
+                            viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
                         </svg>
-                        Agregar a favoritos
+                        {favoritos.includes(symbol) ? 'En favoritos' : 'Agregar a favoritos'}
                     </button>
                 </div>
 
@@ -236,6 +276,47 @@ function App() {
                             : <Login onSwitchToRegister={() => setShowRegister(true)} onSuccess={() => setShowAuthModal(false)} />
                         }
                     </div>
+                </div>
+            )}
+
+           {showFavoritos && usuario && (
+                <div className="fixed top-16 right-4 bg-white rounded-lg shadow-lg border border-gray-200 w-48 z-40 p-4">
+                    <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-semibold text-gray-700">Mis favoritos</h3>
+                        <button
+                            onClick={() => setShowFavoritos(false)}
+                            className="text-gray-400 hover:text-gray-600 text-xs"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                    {favoritos.length === 0 ? (
+                        <p className="text-sm text-gray-400">No tienes favoritos aún.</p>
+                    ) : (
+                        <ul className="flex flex-col gap-2">
+                            {favoritos.map(fav => (
+                                <li key={fav} className="flex items-center justify-between">
+                                    <button
+                                        onClick={() => { setSymbol(fav); setShowFavoritos(false); }}
+                                        className="text-sm text-blue-600 hover:underline"
+                                    >
+                                        {fav}
+                                    </button>
+                                    <button
+                                        onClick={async () => {
+                                            await eliminarFavorito(fav, token);
+                                            setFavoritos(favoritos.filter(f => f !== fav));
+                                        }}
+                                        className="w-6 h-6 rounded-full bg-red-100 hover:bg-red-500 text-red-500 hover:text-white flex items-center justify-center transition"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
                 </div>
             )}
         </div>

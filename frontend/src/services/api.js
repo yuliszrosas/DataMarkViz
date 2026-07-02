@@ -87,3 +87,41 @@ export const loginUsuario = async (correo, contrasena) => {
         throw error;
     }
 };
+
+//Obtener favoritos
+export const fetchFavoritos = async (token) => {
+    const response = await fetch (`${API_BASE_URL}/api/favoritos`, {
+        headers: {'Authorization': `Bearer ${token}`}
+    });
+   
+    const data = await response.json();
+    if(!response.ok) throw new Error(data.message || 'Error al obtener favoritos');
+    return data;
+};
+
+//Agregar favorito
+export const agregarFavorito = async (simbolo, token) => {
+    const response = await fetch (`${API_BASE_URL}/api/favoritos`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ simbolo })
+    });
+    
+    const data = await response.json();
+    if(!response.ok) throw new Error(data.message || 'Error al agregar favoritos');
+    return data;
+};
+
+//Eliminar favorito
+export const eliminarFavorito = async (simbolo, token) => {
+    const response = await fetch(`${API_BASE_URL}/api/favoritos/${simbolo}`, {
+        method: 'DELETE',
+        headers: {'Authorization': `Bearer ${token}`}
+    });
+    const data = await response.json();
+    if(!response.ok) throw new Error(data.message || 'Error al eliminar favorito');
+    return data;
+}
