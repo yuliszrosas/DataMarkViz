@@ -516,4 +516,88 @@ $app->post('/api/auth/login', function (Request $request, Response $response) us
     return $response->withHeader('Content-Type', 'application/json');
 });
 
+//Favoritos
+//Verificación de JWT
+function verificarToken (Request $request, $pdo) {
+    $authHeader = $request->getHeaderLine('Authorization');
+    if(!$authHeader || !str_starts_with($authHeader, 'Bearer ')){
+        throw new Exception('Token no proporcionado');
+    }
+    $token = substr($authHeader, 7);
+    try{
+        $decode = \Firebase\JWT\JWT::decode($token, new \Firebase\JWT\Key($_ENV['JWT_SECRET'], 'HS256'));
+        return $decode->sub;
+    }catch(Exception $e){
+        throw new Exception('Token inválido');
+    }
+}
+
+//Obtener favoritos de usuario
+$app->get('/api/favoritos', function (Request $request, Response $response) {
+    $pdo = require __DIR__ . '/config/database.php';
+    try{
+        $id_usuario = verificarToken($request, $pdo);
+        $stmt = $pdo->prepare("SELECT simbolo FROM favoritos WHERE id_usuario = :id_usuario");
+        $stmt->execute([':id_usuario' => $id_usuario]);
+        $favoritos = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        $response->getBody()->write(json_encode(['status' => 'ok', 'data' => $favoritos]));
+        return $response->withHeader('Content-Type', 'application/json');
+    }catch(Exception $e){
+        $response->getBody()->write(json_encode(['status' => 'error', 'message' => $e->getMessage()]));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
+    }
+});
+
+//Agregar favorito
+$app->post('/api/favoritos', function (Request $request, Response $response) {
+    $pdo = require __DIR__ . '/config/database.php';
+    try{
+        $id_usuario = verificarToken($request, $pdo);
+        $body = json_decode($request->getBody()->getContents(), true);
+        $simbolo = $body['simbolo'] ?? null;
+
+        if(!$simbolo){
+            $response->getBody()->write(json_encode(['status' => 'error', 'message' => 'Símbolo requeridp']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(400);
+        }
+
+        //Verificar si ya existe
+        $stmt = $pdo->prepare("SELECT id_favorito FROM favoritos WHERE id_usuario = :id_usuario AND simbolo = :simbolo");
+        $stmt->execute([':id_usuario' => $id_usuario, ':simbolo' => $simbolo]);
+
+        if($stmt->fetch()){
+            $response->getBody()->write(json_encode(['status' => 'error', 'message' => 'Ya está en favoritos']));
+            return $response->withHeader('Content-Type', 'application/json')->withStatus(409);
+        }
+
+        $stmt = $pdo->prepare("INSERT INTO favoritos (simbolo, id_usuario) VALUES (:simbolo, :id_usuario)");
+        $stmt->execute([':simbolo' => $simbolo, ':id_usuario' => $id_usuario]);
+
+        $response->getBody()->write(json_encode(['status' => 'ok', 'message' => 'Favorito agregado']));
+        return $response->withHeader('Content-Type', 'application/json');
+    }catch(Exception $e){
+        $response->getBody()->write(json_encode(['staus' => 'error', 'message' => $e->getMessage()]));
+        return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
+    }
+});
+
+//Eliminar favorito
+$app->delete('/api/favoritos/{simbolo}', function (Request $request, Response $response, $args) {
+    $pdo = require __DIR__ . '/config/database.php';
+    
+    try{
+        $id_usuario = verificarToken($request, $pdo);
+        $simbolo = $args['simbolo'];
+
+        $stmt = $pdo->prepare("DELETE FROM favoritos WHERE id_usuario = :id_usuario AND simbolo = :simbolo");
+        $stmt->execute([':id_usuario' => $id_usuario, ':simbolo' => $simbolo]);
+
+        $response->getBody()->write(json_encode(['status' => 'ok', 'message' => 'Favorito eliminado']));
+        return $response->withHeader('Content-Type', 'application/json');
+    }catch(Exception $e){
+        $response->getBody()->write(json_encode(['status' => 'error', 'message' => $e->getMessage()]));
+        return $response->withHeader('Content-Type','application/json')->withStatus(401);
+    }
+});
+
 $app->run();
