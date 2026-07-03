@@ -29,6 +29,7 @@ function App() {
     const [lastUpdate, setLastUpdate] = useState(null);
     const [favoritos, setFavoritos] = useState([]);
     const [showFavoritos, setShowFavoritos] = useState(false);
+    const [errorFavorito, setErrorFavorito] =useState(null);
 
     const loadData = async () => {
         setLoading(true);
@@ -73,6 +74,7 @@ function App() {
             setShowAuthModal(true);
             return;
         }
+        setErrorFavorito(null);
         try {
             const esFavorito = favoritos.includes(symbol);
             if (esFavorito) {
@@ -83,6 +85,12 @@ function App() {
                 setFavoritos([...favoritos, symbol]);
             }
         } catch (err) {
+            if(err.message === 'Token inválido'){
+                logout();
+                setShowAuthModal(true);
+            } else {
+                setErrorFavorito('No se pudo actualizar favoritos, intente de nuevo');
+            }
             console.error(err);
         }
     }
@@ -104,6 +112,7 @@ function App() {
                         <h1 className="text-2xl font-bold text-gray-800">DataMarkViz</h1>
                         <p className="text-sm text-gray-500">Dashboard del Mercado Mexicano</p>
                     </div>
+                    
                     {usuario ? (
                         <div className="flex items-center gap-3">
                             <span className="text-sm text-gray-600">Hola, <strong>{usuario}</strong></span>
@@ -195,6 +204,22 @@ function App() {
                         {favoritos.includes(symbol) ? 'En favoritos' : 'Agregar a favoritos'}
                     </button>
                 </div>
+
+                {/* Error */}
+                {!loading && error && (
+                    <div className="bg-red-50 border border-red-200 text-red-600 rounded-lg px-4 py-3 mb-6 flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                        </svg>
+                        <span className="text-sm">{error}</span>
+                        <button
+                            onClick={loadData}
+                            className="ml-auto text-sm text-red-500 underline hover:text-red-700"
+                        >
+                            Reintentar
+                        </button>
+                    </div>
+                )}
 
                 {/* Layout principal - 2 columnas */}
                 {/*carga*/}
@@ -290,6 +315,9 @@ function App() {
                             ✕
                         </button>
                     </div>
+                      {errorFavorito && (
+                            <p className="text-xs text-red-500 mb-2">{errorFavorito}</p>
+                        )}
                     {favoritos.length === 0 ? (
                         <p className="text-sm text-gray-400">No tienes favoritos aún.</p>
                     ) : (
@@ -304,15 +332,24 @@ function App() {
                                     </button>
                                     <button
                                         onClick={async () => {
-                                            await eliminarFavorito(fav, token);
-                                            setFavoritos(favoritos.filter(f => f !== fav));
+                                            try {
+                                                await eliminarFavorito(fav, token);
+                                                setFavoritos(favoritos.filter(f => f !== fav));
+                                            } catch (err) {
+                                                if (err.message === 'Token inválido') {
+                                                    logout();
+                                                    setShowAuthModal(true);
+                                                } else {
+                                                    setErrorFavorito('No se pudo eliminar el favorito, intenta de nuevo.');
+                                                }
+                                            }
                                         }}
                                         className="w-6 h-6 rounded-full bg-red-100 hover:bg-red-500 text-red-500 hover:text-white flex items-center justify-center transition"
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                         </svg>
-                                    </button>
+                                </button>
                                 </li>
                             ))}
                         </ul>
