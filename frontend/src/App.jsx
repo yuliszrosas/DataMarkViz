@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchRendimientos } from './services/api';
+import { fetchRendimientos, fetchFavoritos, agregarFavorito, eliminarFavorito } from './services/api';
 import PriceChart from './components/PriceChart';
 import PerformanceChart from './components/PerformanceChart';
 import SummaryTable from './components/SummaryTable';
@@ -7,7 +7,6 @@ import ImpactCard from './components/ImpactCard';
 import Login from './components/Login';
 import Register from './components/Register';
 import { useAuth } from './context/AuthContext';
-import { fetchFavoritos, agregarFavorito, eliminarFavorito } from './services/api';
 
 const availableSymbols = ['AAPL', 'TSLA', 'MSFT', 'GOOGL', 'AMZN'];
 const availableRanges = [
@@ -36,10 +35,7 @@ function App() {
         setError(null);
         try {
             console.log(` Solicitando: ${symbol} - ${range}`);
-        const result = await fetchRendimientos(symbol, range);
-        console.log(' Resultado completo:', result);
-        console.log(' data:', result.data);
-        console.log(' longitud:', result.data?.length);
+            const result = await fetchRendimientos(symbol, range);
             
             if (result.status === 'ok') {
                 setData(result.data);
@@ -101,13 +97,12 @@ function App() {
         setShowAuthModal(true);
     }
 
-
     return (
-        <div className="min-h-screen bg-gray-100">
+        <div className="min-h-screen bg-gray-100 flex flex-col justify-between">
 
             {/* Navbar */}
-            <header className="bg-white shadow-sm border-b border-gray-200">
-                <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex justify-between items-center">
+            <header className="bg-white shadow-sm border-b border-gray-200 shrink-0">
+                <div className="max-w-7xl mx-auto px-4 py-2 sm:px-6 lg:px-8 flex justify-between items-center">
                     <div>
                         <h1 className="text-2xl font-bold text-gray-800">DataMarkViz</h1>
                         <p className="text-sm text-gray-500">Dashboard del Mercado Mexicano</p>
@@ -146,64 +141,87 @@ function App() {
             </header>
 
             {/* Main */}
-            <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+            <main className="w-[95%] max-w-[2200px] mx-auto pt-1 px-4 py-1 sm:px-6 lg:px-8 overflow-x-auto flex-1 flex flex-col justify-center">
 
-                {/* Título del activo */}
-                <h2 className="text-xl font-semibold text-gray-700 mb-4">
-                    {symbol} — {availableRanges.find(r => r.value === range)?.label}
-                </h2>
+                {!loading && !error && data && data.length > 0 && (
+                    <div className="grid grid-cols-[minmax(0,55fr)_minmax(0,25fr)_minmax(0,20fr)] max-[1100px]:grid-cols-[minmax(0,40fr)_minmax(0,35fr)_minmax(0,25fr)] gap-3 px-4 py-3 min-w-[1100px]">
 
-                {/* Controles */}
-                <div className="bg-white rounded-lg shadow-sm p-4 mb-6 flex flex-wrap gap-4 items-end">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Rango de fechas</label>
-                        <div className="flex gap-2">
-                            {availableRanges.map(r => (
-                                <button
-                                    key={r.value}
-                                    onClick={() => setRange(r.value)}
-                                    className={`px-3 py-1.5 text-sm rounded-md border transition ${
-                                        range === r.value
-                                            ? 'bg-blue-600 text-white border-blue-600'
-                                            : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
-                                    }`}
+                        {/* Columna izquierda — gráficas */}
+                        <div className="flex flex-col gap-4 h-full min-h-0 min-w-0 max-[1100px]:h-auto">
+                            <div className="bg-white rounded-lg shadow-sm p-4 overflow-hidden flex-1 min-h-0 min-w-0 max-[1100px]:flex-none max-[1100px]:h-56">
+                                <PriceChart data={data} symbol={symbol} />
+                            </div>
+                            <div className="bg-white rounded-lg shadow-sm p-4 overflow-hidden flex-1 min-h-0 min-w-0 max-[1100px]:flex-none max-[1100px]:h-56">
+                                <PerformanceChart data={data} symbol={symbol}/>
+                            </div>
+                        </div>
+
+                        {/* Columna del medio — tarjeta de impacto + tabla */}
+                        <div className="flex flex-col gap-3 min-h-0">
+                            <div className="bg-white rounded-lg shadow-sm pt-2 pb-3 px-3 shrink-0">
+                                <ImpactCard data={data} symbol={symbol}/>
+                            </div>
+                            <div className="bg-white rounded-lg shadow-sm p-3 flex-1 flex flex-col min-h-0 overflow-hidden">
+                                <h2 className="text-sm font-semibold text-gray-500 mb-1.5 uppercase tracking-wide shrink-0">
+                                    Tabla resumen
+                                </h2>
+                                {/* Scroll SÓLO cuando la pantalla es reducida (< 1280px); en monitor grande se estira completa sin scroll */}
+                                <div className="max-[1280px]:max-h-[175px] max-[1280px]:overflow-y-auto custom-scrollbar">
+                                    <SummaryTable data={data} symbol={symbol}/>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Columna derecha — controles */}
+                        <div className="bg-white rounded-lg shadow-sm p-4 flex flex-col gap-3 self-start">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Activo</label>
+                                <select
+                                    value={symbol}
+                                    onChange={(e) => setSymbol(e.target.value)}
+                                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 >
-                                    {r.label}
-                                </button>
-                            ))}
+                                    {availableSymbols.map(s => (
+                                        <option key={s} value={s}>{s}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Rango de fechas</label>
+                                <div className="flex flex-col gap-2">
+                                    {availableRanges.map(r => (
+                                        <button
+                                            key={r.value}
+                                            onClick={() => setRange(r.value)}
+                                            className={`px-3 py-1.5 text-sm rounded-md border transition text-left ${
+                                                range === r.value
+                                                    ? 'bg-blue-600 text-white border-blue-600'
+                                                    : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            {r.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <button
+                                onClick={handleFavoritoClick}
+                                className={`flex items-center gap-2 px-3 py-2 text-sm border rounded-md transition ${
+                                    favoritos.includes(symbol)
+                                        ? 'bg-yellow-50 border-yellow-400 text-yellow-600'
+                                        : 'border-gray-300 text-gray-500 hover:bg-gray-50'
+                                }`}
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4"
+                                    fill={favoritos.includes(symbol) ? 'currentColor' : 'none'}
+                                    viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
+                                </svg>
+                                {favoritos.includes(symbol) ? 'En favoritos' : 'Agregar a favoritos'}
+                            </button>
                         </div>
                     </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Activo</label>
-                        <select
-                            value={symbol}
-                            onChange={(e) => setSymbol(e.target.value)}
-                            className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                            {availableSymbols.map(s => (
-                                <option key={s} value={s}>{s}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    {/* Botón agregar favorito*/}
-                    <button
-                        onClick={handleFavoritoClick}
-                        className={`flex items-center gap-2 px-3 py-2 text-sm border rounded-md transition ${
-                            favoritos.includes(symbol)
-                                ? 'bg-yellow-50 border-yellow-400 text-yellow-600'
-                                : 'border-gray-300 text-gray-500 hover:bg-gray-50'
-                        }`}
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4"
-                            fill={favoritos.includes(symbol) ? 'currentColor' : 'none'}
-                            viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.562.562 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z" />
-                        </svg>
-                        {favoritos.includes(symbol) ? 'En favoritos' : 'Agregar a favoritos'}
-                    </button>
-                </div>
+                )}
 
                 {/* Error */}
                 {!loading && error && (
@@ -220,69 +238,9 @@ function App() {
                         </button>
                     </div>
                 )}
-
-                {/* Layout principal - 2 columnas */}
-                {/*carga*/}
-                {loading && (
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        
-                        {/* Columna izquierda — skeleton de la gráfica precios*/}
-                        <div className="lg:col-span-2">
-                            <div className="bg-white rounded-lg shadow-sm p-4">
-                                <div className="animate-pulse flex flex-col gap-3">
-                                    <div className="h-5 bg-gray-200 rounded w-48 mx-auto" />
-                                    <div className="h-4 bg-gray-200 rounded w-64 mx-auto" />
-                                    <div className="bg-gray-200 rounded w-full" style={{ height: '360px' }} />
-                                </div>
-                            </div>
-                        </div>
-                    
-                        
-                        {/* Columna izquierda — skeleton de la gráfica rendimientos*/}
-                        <div className="lg:col-span-2">
-                            <div className="bg-white rounded-lg shadow-sm p-4">
-                                <div className="animate-pulse flex flex-col gap-3">
-                                    <div className="h-5 bg-gray-200 rounded w-48 mx-auto" />
-                                    <div className="h-4 bg-gray-200 rounded w-64 mx-auto" />
-                                    <div className="bg-gray-200 rounded w-full" style={{ height: '360px' }} />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                
-                {!loading && !error && data && data.length > 0 && (
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-                        {/* Columna izquierda — gráficas */}
-                        <div className="lg:col-span-2 flex flex-col gap-6">
-                            <div className="bg-white rounded-lg shadow-sm p-4">
-                                <PriceChart data={data} symbol={symbol} />
-                            </div>
-                            <div className="bg-white rounded-lg shadow-sm p-4">
-                                <PerformanceChart data={data} symbol={symbol}/>
-                            </div>
-                        </div>
-
-                        {/* Columna derecha — tarjeta + tabla*/}
-                        <div className="flex flex-col gap-6">
-                            <ImpactCard data={data} symbol={symbol}/>
-                            <div className="bg-white rounded-lg shadow-sm p-4">
-                                <h2 className="text-sm font-semibold text-gray-500 mb-4 uppercase tracking-wide">
-                                    Tabla resumen
-                                </h2>
-                                <SummaryTable data={data} symbol={symbol}/>
-                            </div>
-                        </div>
-
-                    </div>
-                )}
-
-
             </main>
 
-            <footer className="text-center py-6 text-xs text-gray-400">
+            <footer className="text-center py-2 text-xs text-gray-400 shrink-0">
                 Datos proporcionados por Twelve Data y Banxico
             </footer>
 
@@ -315,9 +273,9 @@ function App() {
                             ✕
                         </button>
                     </div>
-                      {errorFavorito && (
-                            <p className="text-xs text-red-500 mb-2">{errorFavorito}</p>
-                        )}
+                    {errorFavorito && (
+                        <p className="text-xs text-red-500 mb-2">{errorFavorito}</p>
+                    )}
                     {favoritos.length === 0 ? (
                         <p className="text-sm text-gray-400">No tienes favoritos aún.</p>
                     ) : (
@@ -349,7 +307,7 @@ function App() {
                                         <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                         </svg>
-                                </button>
+                                    </button>
                                 </li>
                             ))}
                         </ul>

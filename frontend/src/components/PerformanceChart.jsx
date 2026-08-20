@@ -9,7 +9,7 @@ import {
     Tooltip,
     Legend
 } from 'chart.js';
-import { useMemo } from 'react';
+import { useMemo, useRef, useEffect } from 'react';
 
 ChartJS.register(
     CategoryScale,
@@ -22,34 +22,28 @@ ChartJS.register(
 );
 
 const PerformanceChart = ({ data, symbol }) => {
+    const chartRef = useRef(null);
+
+    useEffect(() => {
+        function watchDPR() {
+            const mq = matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+            const onChange = () => {
+                chartRef.current?.resize();
+                mq.removeEventListener('change', onChange);
+                watchDPR();
+            };
+            mq.addEventListener('change', onChange);
+            return () => mq.removeEventListener('change', onChange);
+        }
+        const cleanup = watchDPR();
+        return cleanup;
+    }, []);
+
     if (!data || data.length === 0) {
         return <div className="text-center py-10 text-gray-500">Cargando datos...</div>;
     }
 
     const reversed = [...data].reverse();
-
-    const lastLabelPlugin = useMemo(() => ({
-        id: 'lastLabel',
-        afterDraw(chart) {
-            const xAxis = chart.scales.x;
-            const lastIndex = reversed.length - 1;
-            const lastLabel = reversed[lastIndex]?.fecha;
-            if(!lastLabel || !xAxis) return;
-
-            const x = xAxis.getPixelForValue(lastIndex);
-            const y = xAxis.bottom -50;
-
-            const ctx = chart.ctx;
-            ctx.save();
-            ctx.font = '12px sans-serif';
-            ctx.fillStyle = '#666';
-            ctx.textAlign = 'right';
-            ctx.translate(x, y);
-            ctx.rotate((-45 * Math.PI) / 180);
-            ctx.fillText(lastLabel, 0, 0);
-            ctx.restore();
-        }
-    }), [reversed]);
     
     const chartData = {
         labels: reversed.map(item => item.fecha),
@@ -77,7 +71,7 @@ const PerformanceChart = ({ data, symbol }) => {
         responsive: true,
          maintainAspectRatio: false,
         layout:{
-            padding : { right: 20 }
+            padding : { right: 20, left: 10 }
         },
         interaction: {
             mode: 'index',
@@ -102,11 +96,13 @@ const PerformanceChart = ({ data, symbol }) => {
                     minRotation: 45,
                     maxRotation: 45,
                     autoSkip: true,
-                    autoSkipPadding: 30,
-                    maxTicksLimit: 15
-                }
+                    autoSkipPadding: 20,
+                    maxTicksLimit: 12
+                }, 
+                grif: { display: false }
             },
             y: {
+                afterFit: (axis) => { axis.width = 65; },
                 title: {
                     display: true,
                     text: 'Rendimiento (%)'
@@ -123,30 +119,26 @@ const PerformanceChart = ({ data, symbol }) => {
     const minWidth = Math.max(600, reversed.length * 9);
 
     return (
-        <div className="w-full flex flex-col">
-            <div className="mb-4 flex flex-col items-center gap-2">
-                <h3 className="text-lg font-bold text-gray-800 tracking-tight">
+        <div className="w-full h-full min-w-0 flex flex-col justify-between">
+            <div className="mb-2 flex flex-col items-center gap-1 shrink-0">
+                <h3 className="text-base font-bold text-gray-800 tracking-tight">
                     {symbol} - Rendimiento Acumulado USD vs MXN
                 </h3>
-                <div className="flex gap-6 justify-center items-center text-sm font-medium text-gray-600">
-                    <div className="flex items-center gap-2">
-                        <span className="w-7 h-3 bg-blue-500 rounded-sm inline-block border border-blue-600"></span>
+                <div className="flex gap-4 justify-center items-center text-xs font-medium text-gray-600">
+                    <div className="flex items-center gap-1.5">
+                        <span className="w-6 h-2.5 bg-blue-500 rounded-sm inline-block border border-blue-600"></span>
                         <span>Rendimiento USD (%)</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <span className="w-7 h-3 bg-emerald-500 rounded-sm inline-block border border-emerald-600"></span>
+                    <div className="flex items-center gap-1.5">
+                        <span className="w-6 h-2.5 bg-emerald-500 rounded-sm inline-block border border-emerald-600"></span>
                         <span>Rendimiento MXN (%)</span>
                     </div>
                 </div>
             </div>
 
-            <div className="w-full overflow-x-auto pb-2 custom-scrollbar">
-                <div style={{ minWidth: `${minWidth}px`, width: '100%', height: '360px' }}>
-                    <Line
-                        data={chartData}
-                        options={options}
-                        plugins={[lastLabelPlugin]}
-                    />
+            <div className="w-full flex-1 min-h-[160px] overflow-x-auto">
+                <div style={{ minWidth: `${minWidth}px` }} className="h-full relative">
+                    <Line ref={chartRef} data={chartData} options={options} />
                 </div>
             </div>
         </div>
